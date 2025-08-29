@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tính thời hạn chuyển bản án/quyết định sang THADS</title>
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Day.js for date handling -->
+  <script src="https://unpkg.com/dayjs@1/dayjs.min.js"></script>
+  <script src="https://unpkg.com/dayjs@1/plugin/customParseFormat.js"></script>
+  <script src="https://unpkg.com/dayjs@1/plugin/isoWeek.js"></script>
+  <script src="https://unpkg.com/dayjs@1/plugin/weekday.js"></script>
+  <script src="https://unpkg.com/dayjs@1/plugin/utc.js"></script>
+  <script src="https://unpkg.com/dayjs@1/plugin/timezone.js"></script>
+  <script>
+    dayjs.extend(dayjs_plugin_customParseFormat);
+    dayjs.extend(dayjs_plugin_isoWeek);
+    dayjs.extend(dayjs_plugin_weekday);
+    dayjs.extend(dayjs_plugin_utc);
+    dayjs.extend(dayjs_plugin_timezone);
+  </script>
+  <style>
+    :root { color-scheme: light dark; }
+    .card { @apply bg-white/80 dark:bg-zinc-900/80 backdrop-blur rounded-2xl shadow p-4; }
+    .btn { @apply inline-flex items-center gap-2 rounded-xl px-4 py-2 shadow-sm border border-zinc-200 dark:border-zinc-800 hover:shadow; }
+    .input { @apply w-full rounded-xl border border-zinc-300 dark:border-zinc-700 px-3 py-2 bg-white dark:bg-zinc-900; }
+    .select { @apply w-full rounded-xl border border-zinc-300 dark:border-zinc-700 px-3 py-2 bg-white dark:bg-zinc-900; }
+    .badge { @apply text-xs px-2 py-1 rounded-full; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-sky-50 to-emerald-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-900 dark:text-zinc-100">
+  <div class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold">Tính thời hạn chuyển BA/QĐ sang THADS</h1>
+        <p class="text-sm text-zinc-600 dark:text-zinc-400">Bản HTML 1-file, nhập dữ liệu và tính hạn phải chuyển, kiểm tra vi phạm. (Tham số có thể điều chỉnh theo thực tế)</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="btnAddRow" class="btn">➕ Thêm dòng</button>
+        <button id="btnImport" class="btn">📥 Nhập JSON</button>
+        <button id="btnExport" class="btn">📤 Xuất JSON</button>
+        <button id="btnPrint" class="btn">🖨️ In</button>
+        <input id="fileImport" type="file" accept="application/json" class="hidden" />
+      </div>
+    </header>
+
+    <!-- Quy tắc tính -->
+    <section class="card">
+      <div class="flex flex-col lg:flex-row gap-6">
+        <div class="flex-1 space-y-3">
+          <h2 class="text-lg font-semibold">Quy tắc tính thời hạn</h2>
+          <p class="text-sm text-zinc-600 dark:text-zinc-400">Chọn loại vụ việc & kiểu đếm ngày. Có thể chỉnh sửa số ngày theo thực tế đơn vị bạn áp dụng.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="card">
+              <label class="text-sm font-medium">HS – Hình sự</label>
+              <div class="mt-2 flex items-center gap-2">
+                <input id="daysHS" type="number" class="input" value="30" min="0" />
+                <span class="text-sm">ngày</span>
+              </div>
+            </div>
+            <div class="card">
+              <label class="text-sm font-medium">HNGĐ – Hôn nhân gia đình</label>
+              <div class="mt-2 flex items-center gap-2">
+                <input id="daysHNGD" type="number" class="input" value="30" min="0" />
+                <span class="text-sm">ngày</span>
+              </div>
+            </div>
+            <div class="card">
+              <label class="text-sm font-medium">DS – Dân sự (QĐ)</label>
+              <div class="mt-2 flex items-center gap-2">
+                <input id="daysDS" type="number" class="input" value="15" min="0" />
+                <span class="text-sm">ngày</span>
+              </div>
+            </div>
+            <div class="card">
+              <label class="text-sm font-medium">HN – Hành chính (QĐ)</label>
+              <div class="mt-2 flex items-center gap-2">
+                <input id="daysHN" type="number" class="input" value="15" min="0" />
+                <span class="text-sm">ngày</span>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-sm font-medium">Kiểu đếm</label>
+              <select id="countMode" class="select mt-1">
+                <option value="calendar">Ngày lịch</option>
+                <option value="business">Ngày làm việc (bỏ T7, CN & ngày nghỉ)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-medium">Nếu hạn rơi vào ngày nghỉ</label>
+              <select id="rolloverMode" class="select mt-1">
+                <option value="next">Chuyển sang ngày làm việc kế tiếp</option>
+                <option value="keep">Giữ nguyên ngày hạn</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Danh sách ngày nghỉ -->
+        <div class="w-full lg:w-[420px]">
+          <h2 class="text-lg font-semibold mb-2">Danh sách ngày nghỉ</h2>
+          <p class="text-sm text-zinc-600 dark:text-zinc-400">Nhập từng dòng theo định dạng <strong>YYYY-MM-DD</strong>. Ví dụ: 2025-09-02</p>
+          <textarea id="holidayInput" rows="10" class="input font-mono" placeholder="2025-01-01\n2025-02-09\n2025-02-10"></textarea>
+          <div class="mt-2 flex gap-2">
+            <button id="btnLoadDefaultHolidays" class="btn">↺ Tải mẫu mặc định</button>
+            <button id="btnApplyHolidays" class="btn">✔ Áp dụng</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bảng dữ liệu -->
+    <section class="card">
+      <div class="overflow-auto">
+        <table class="min-w-full text-sm" id="dataTable">
+          <thead class="text-left">
+            <tr class="border-b border-zinc-200 dark:border-zinc-800">
+              <th class="py-2 pr-2">#</th>
+              <th class="py-2 pr-2">Số Bản án / QĐ</th>
+              <th class="py-2 pr-2">Loại</th>
+              <th class="py-2 pr-2">Ngày ra bản án</th>
+              <th class="py-2 pr-2">Ngày có hiệu lực</th>
+              <th class="py-2 pr-2">Ngày nhận (THADS)</th>
+              <th class="py-2 pr-2">Hạn phải chuyển</th>
+              <th class="py-2 pr-2">Vi phạm</th>
+              <th class="py-2 pr-2">Số ngày vi phạm</th>
+              <th class="py-2 pr-2">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="text-xs text-zinc-500 dark:text-zinc-400">
+      <p><strong>Lưu ý:</strong> Công cụ phục vụ hỗ trợ nghiệp vụ. Vui lòng đối chiếu quy định pháp luật hiện hành & quy chế nội bộ đơn vị trước khi ký phát hành.</p>
+    </footer>
+  </div>
+
+  <template id="rowTemplate">
+    <tr class="border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30">
+      <td class="py-2 pr-2 align-top"><span class="row-index"></span></td>
+      <td class="py-2 pr-2 align-top"><input class="input so" placeholder="vd. 55/HS-ST" /></td>
+      <td class="py-2 pr-2 align-top">
+        <select class="select loai">
+          <option value="auto">Tự nhận diện</option>
+          <option value="HS">HS – Hình sự</option>
+          <option value="HNGĐ">HNGĐ – Hôn nhân gia đình</option>
+          <option value="DS">DS – Dân sự (QĐ)</option>
+          <option value="HN">HN – Hành chính (QĐ)</option>
+        </select>
+      </td>
+      <td class="py-2 pr-2 align-top"><input type="date" class="input ngayra" /></td>
+      <td class="py-2 pr-2 align-top"><input type="date" class="input hieuluc" /></td>
+      <td class="py-2 pr-2 align-top"><input type="date" class="input nhan" /></td>
+      <td class="py-2 pr-2 align-top"><input class="input han" readonly /></td>
+      <td class="py-2 pr-2 align-top"><span class="badge trangthai"></span></td>
+      <td class="py-2 pr-2 align-top"><span class="vipham"></span></td>
+      <td class="py-2 pr-2 align-top"><button class="btn btnDel">🗑️ Xóa</button></td>
+    </tr>
+  </template>
+
+  <script>
+    // --- State ---
+    const state = {
+      rows: [],
+      holidays: new Set(),
+    };
+
+    // --- Helpers ---
+    const fmt = (d) => d ? dayjs(d).format('YYYY-MM-DD') : '';
+
+    function parseLoaiFromSo(soStr) {
+      if (!soStr) return null;
+      const s = soStr.toUpperCase();
+      if (s.includes('/HS')) return 'HS';
+      if (s.includes('HNGĐ')) return 'HNGĐ';
+      if (s.includes('/DS') || s.includes('QĐST-DS')) return 'DS';
+      if (s.includes('/HN') || s.includes('QĐST-HN')) return 'HN';
+      return null;
+    }
+
+    function isHoliday(date) {
+      const d = dayjs(date);
+      const isWeekend = d.day() === 0 || d.day() === 6; // CN=0, T7=6
+      const inList = state.holidays.has(d.format('YYYY-MM-DD'));
+      return isWeekend || inList;
+    }
+
+    function addDaysCalendar(start, days) {
+      return dayjs(start).add(days, 'day');
+    }
+
+    function addDaysBusiness(start, days) {
+      let d = dayjs(start);
+      let added = 0;
+      while (added < days) {
+        d = d.add(1, 'day');
+        if (!isHoliday(d)) added++;
+      }
+      return d;
+    }
+
+    function rollToNextBusiness(d) {
+      let x = dayjs(d);
+      while (isHoliday(x)) x = x.add(1, 'day');
+      return x;
+    }
+
+    function getDaysSetting(loai) {
+      const daysHS = Number(document.getElementById('daysHS').value || 0);
+      const daysHNGD = Number(document.getElementById('daysHNGD').value || 0);
+      const daysDS = Number(document.getElementById('daysDS').value || 0);
+      const daysHN = Number(document.getElementById('daysHN').value || 0);
+      switch (loai) {
+        case 'HS': return daysHS;
+        case 'HNGĐ': return daysHNGD;
+        case 'DS': return daysDS;
+        case 'HN': return daysHN;
+        default: return daysDS; // fallback
+      }
+    }
+
+    function recalcRow(tr) {
+      const so = tr.querySelector('.so').value.trim();
+      const loaiSel = tr.querySelector('.loai').value;
+      const loai = loaiSel === 'auto' ? (parseLoaiFromSo(so) || 'DS') : loaiSel; // default DS nếu không nhận diện
+      const hieuLuc = tr.querySelector('.hieuluc').value;
+      const ngayNhan = tr.querySelector('.nhan').value;
+
+      const mode = document.getElementById('countMode').value; // calendar | business
+      const rollover = document.getElementById('rolloverMode').value; // next | keep
+
+      const days = getDaysSetting(loai);
+      let han = '';
+      if (hieuLuc) {
+        const start = dayjs(hieuLuc);
+        let dHan = (mode === 'business') ? addDaysBusiness(start, days) : addDaysCalendar(start, days);
+        if (rollover === 'next' && isHoliday(dHan)) dHan = rollToNextBusiness(dHan);
+        han = fmt(dHan);
+      }
+      tr.querySelector('.han').value = han;
+
+      // Vi phạm
+      let trangThaiText = '';
+      let trangThaiClass = '';
+      let soNgayVP = '';
+      if (han && ngayNhan) {
+        const dHan = dayjs(han);
+        const dNhan = dayjs(ngayNhan);
+        if (dNhan.isAfter(dHan, 'day')) {
+          trangThaiText = 'Có';
+          trangThaiClass = 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200';
+
+          // Số ngày vi phạm = dNhan - dHan (tính theo ngày lịch)
+          soNgayVP = dNhan.diff(dHan, 'day');
+        } else {
+          trangThaiText = 'Không';
+          trangThaiClass = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200';
+          soNgayVP = '';
+        }
+      }
+      const badge = tr.querySelector('.trangthai');
+      badge.className = 'badge trangthai ' + trangThaiClass;
+      badge.textContent = trangThaiText;
+      tr.querySelector('.vipham').textContent = soNgayVP;
+    }
+
+    function refreshIndexes() {
+      document.querySelectorAll('#tbody tr').forEach((tr, i) => {
+        tr.querySelector('.row-index').textContent = i + 1;
+      });
+    }
+
+    function addRow(prefill = {}) {
+      const tpl = document.getElementById('rowTemplate');
+      const tr = tpl.content.firstElementChild.cloneNode(true);
+      // Bind events
+      tr.querySelectorAll('input, select').forEach(el => {
+        el.addEventListener('input', () => recalcRow(tr));
+        el.addEventListener('change', () => recalcRow(tr));
+      });
+      tr.querySelector('.btnDel').addEventListener('click', () => {
+        tr.remove();
+        refreshIndexes();
+      });
+      // Prefill
+      if (prefill.so) tr.querySelector('.so').value = prefill.so;
+      if (prefill.loai) tr.querySelector('.loai').value = prefill.loai;
+      if (prefill.ngayra) tr.querySelector('.ngayra').value = prefill.ngayra;
+      if (prefill.hieuluc) tr.querySelector('.hieuluc').value = prefill.hieuluc;
+      if (prefill.nhan) tr.querySelector('.nhan').value = prefill.nhan;
+
+      document.getElementById('tbody').appendChild(tr);
+      refreshIndexes();
+      recalcRow(tr);
+    }
+
+    function exportJSON() {
+      const rows = [];
+      document.querySelectorAll('#tbody tr').forEach(tr => {
+        rows.push({
+          so: tr.querySelector('.so').value.trim(),
+          loai: tr.querySelector('.loai').value,
+          ngayra: tr.querySelector('.ngayra').value,
+          hieuluc: tr.querySelector('.hieuluc').value,
+          nhan: tr.querySelector('.nhan').value,
+          han: tr.querySelector('.han').value,
+          trangthai: tr.querySelector('.trangthai').textContent,
+          songayvipham: tr.querySelector('.vipham').textContent,
+        })
+      });
+      const blob = new Blob([JSON.stringify({
+        meta: { app: 'thoi-han-ba-qd-thads', v: 1 },
+        settings: {
+          daysHS: Number(document.getElementById('daysHS').value || 0),
+          daysHNGD: Number(document.getElementById('daysHNGD').value || 0),
+          daysDS: Number(document.getElementById('daysDS').value || 0),
+          daysHN: Number(document.getElementById('daysHN').value || 0),
+          countMode: document.getElementById('countMode').value,
+          rolloverMode: document.getElementById('rolloverMode').value,
+        },
+        holidays: Array.from(state.holidays.values()),
+        rows
+      }, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'du-lieu-thoi-han.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importJSON(obj) {
+      // settings
+      if (obj.settings) {
+        document.getElementById('daysHS').value = obj.settings.daysHS ?? 30;
+        document.getElementById('daysHNGD').value = obj.settings.daysHNGD ?? 30;
+        document.getElementById('daysDS').value = obj.settings.daysDS ?? 15;
+        document.getElementById('daysHN').value = obj.settings.daysHN ?? 15;
+        document.getElementById('countMode').value = obj.settings.countMode ?? 'calendar';
+        document.getElementById('rolloverMode').value = obj.settings.rolloverMode ?? 'next';
+      }
+      // holidays
+      if (Array.isArray(obj.holidays)) {
+        state.holidays = new Set(obj.holidays);
+        document.getElementById('holidayInput').value = obj.holidays.join('\n');
+      }
+      // rows
+      document.getElementById('tbody').innerHTML = '';
+      (obj.rows || []).forEach(r => addRow(r));
+    }
+
+    // --- UI wiring ---
+    document.getElementById('btnAddRow').addEventListener('click', () => addRow());
+    document.getElementById('btnExport').addEventListener('click', exportJSON);
+    document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
+    document.getElementById('fileImport').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { const obj = JSON.parse(reader.result); importJSON(obj); }
+        catch(err) { alert('File không hợp lệ'); }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    });
+
+    document.getElementById('btnPrint').addEventListener('click', () => window.print());
+
+    document.getElementById('btnLoadDefaultHolidays').addEventListener('click', () => {
+      const defaults = [
+        // MẪU – điều chỉnh theo từng năm
+        '2025-01-01', // Tết Dương lịch
+        '2025-04-30', // 30/4
+        '2025-05-01', // 1/5
+        '2025-09-02', // Quốc khánh
+      ];
+      document.getElementById('holidayInput').value = defaults.join('\n');
+    });
+
+    document.getElementById('btnApplyHolidays').addEventListener('click', () => {
+      const lines = document.getElementById('holidayInput').value.split(/\n|\r/).map(s => s.trim()).filter(Boolean);
+      const valid = [];
+      for (const l of lines) {
+        const d = dayjs(l, 'YYYY-MM-DD', true);
+        if (d.isValid()) valid.push(d.format('YYYY-MM-DD'));
+      }
+      state.holidays = new Set(valid);
+      // Recalc all rows
+      document.querySelectorAll('#tbody tr').forEach(tr => recalcRow(tr));
+    });
+
+    // Khi đổi settings => tính lại
+    ['daysHS','daysHNGD','daysDS','daysHN','countMode','rolloverMode'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () =>
+        document.querySelectorAll('#tbody tr').forEach(tr => recalcRow(tr)));
+      document.getElementById(id).addEventListener('change', () =>
+        document.querySelectorAll('#tbody tr').forEach(tr => recalcRow(tr)));
+    });
+
+    // --- Khởi tạo: thêm vài dòng mẫu giống file Excel ---
+    const samples = [
+      { so: '55/HS-ST', loai: 'auto', ngayra: '2024-06-10', hieuluc: '2024-07-10', nhan: '2024-08-01' },
+      { so: '56/HS-ST', loai: 'auto', ngayra: '2024-06-24', hieuluc: '2024-07-24', nhan: '2024-08-01' },
+      { so: '123/QĐST-HN', loai: 'auto', ngayra: '2024-05-31', hieuluc: '2024-06-15', nhan: '2024-08-02' },
+      { so: '159/QĐST-DS', loai: 'auto', ngayra: '2024-04-24', hieuluc: '2024-05-09', nhan: '2024-08-02' },
+      { so: '181/HNGĐ-ST', loai: 'auto', ngayra: '2024-05-07', hieuluc: '2024-06-06', nhan: '2024-08-02' },
+    ];
+    samples.forEach(addRow);
+
+    // Holidays trống ban đầu
+    state.holidays = new Set();
+  </script>
+</body>
+</html>
